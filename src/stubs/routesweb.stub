@@ -1,0 +1,17 @@
+Route::group(['prefix' => 'apmprovinsi', 'middleware' => 'web'], function() {
+    Route::get('/', 'ApmProvinsiController@getIndex');
+    Route::get('/list', 'ApmProvinsiController@getList');
+    Route::get('/detail/{id}', 'ApmProvinsiController@detailApmProvinsi');
+    Route::get('/create', 'ApmProvinsiController@createApmProvinsi');
+    Route::post('/create', 'ApmProvinsiController@createApmProvinsiSave');
+    Route::get('/update/{id}', 'ApmProvinsiController@updateApmProvinsi');
+    Route::post('/update/{id}', 'ApmProvinsiController@getIndex');
+    Route::post('/delete/{id}', 'ApmProvinsiController@getIndex');
+    Route::post('/activate/{id}', 'ApmProvinsiController@getIndex');
+    Route::post('/unactivate/{id}', 'ApmProvinsiController@getIndex');
+    Route::get('/getKota/{id}', 'ApmProvinsiController@getKota');
+    Route::get('/json/{id}/{va}', 'ApmProvinsiController@json');
+    Route::get('/export/{id}', 'ApmProvinsiController@export');
+    Route::get('/getColumns', 'ApmProvinsiController@getColumns');
+});
+

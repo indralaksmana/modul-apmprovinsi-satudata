@@ -1,0 +1,220 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: RendiArca
+ * Date: 27/12/2017
+ * Time: 15.45
+ */
+
+namespace Satudata\Apmprovinsi\Http\Controllers;
+
+use Satudata\Apmprovinsi\Models\ApmProvinsi;
+use Satudata\Apmprovinsi\Models\MasterWilayah;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Maatwebsite\Excel\Facades\Excel;
+
+class ApmProvinsiController extends Controller
+{
+    public function getIndex(Request $request){
+        return view('main');
+    }
+
+    public function getList(Request $request)
+    {
+        $year = ApmProvinsi::year()->get();
+        $categorie = ApmProvinsi::Name()->get();
+
+        $a=0;
+        $b=0;
+        $datas = array();
+        foreach ($categorie as $categories){
+            foreach ($year as $years){
+                $query = DB::table('apmprovinsi');
+                $query = $query->select(DB::raw("apmprovinsiname, SUM(apmprovinsibanten) as apmprovinsibanten, SUM(apmprovinsiindonesia) as apmprovinsiindonesia, EXTRACT(YEAR FROM apmprovinsitgl) as tahun"));
+                $query = $query->whereBetween('apmprovinsitgl', array($years->tahun.'-01-01', $years->tahun.'-12-31'));
+                $query = $query->where('apmprovinsiname', $categories->apmprovinsiname);
+                $query = $query->whereBetween('apmprovinsitgl', array($years->tahun.'-01-01', $years->tahun.'-12-31'));
+                $query = $query->groupBy(array('apmprovinsiname', 'tahun'));
+                $haragaberlaku = $query->get();
+
+                if(!$haragaberlaku->isEmpty()){
+                    foreach ($haragaberlaku as $harga){
+                        $datas[$a]['category'] = $harga->apmprovinsiname;
+                        $datas[$a][$years->tahun.'banten'] = $harga->apmprovinsibanten;
+                        $datas[$a][$years->tahun.'indonesia'] = $harga->apmprovinsiindonesia;
+                    }
+                }else{
+                    $datas[$a][$years->tahun.'banten'] = '-';
+                    $datas[$a][$years->tahun.'indonesia'] = '-';
+                }
+                $b++;
+            }
+            $a++;
+        }
+
+        return response()->json($datas);
+    }
+
+    public function createApmProvinsi()
+    {
+        $header = '<div class="block-header">';
+        $header .= '<h2 style="display: inline;">Angka Partisipasi Murni (APM) Provinsi Banten</h2>';
+        $header .= '</div>';
+
+        $provinsi = MasterWilayah::provinsi()->get();
+
+        return view('backend.laporan.apmprovinsi.create')
+            ->with('header', $header)
+            ->with('provinsis', $provinsi);
+    }
+
+    public function createApmProvinsiSave(Request $request)
+    {
+        $apmprovinsi = new ApmProvinsi();
+        $apmprovinsi->apmprovinsibanten           = $request->input('apmprovinsiBanten');
+        $apmprovinsi->apmprovinsiindonesia        = $request->input('apmprovinsiIndonesia');
+        $apmprovinsi->apmprovinsiname             = $request->input('apmprovinsiName');
+        $apmprovinsi->apmprovinsitgl              = $request->input('apmprovinsiTgl');
+        $apmprovinsi->apmprovinsicreatedate       = date('Y-m-d H:i:s');
+        $apmprovinsi->apmprovinsicreateby         = $request->session()->get('userId');
+        $apmprovinsi->apmprovinsistatus           = 1;
+
+        if($apmprovinsi->save())
+        {
+            $responses = array('message' => 'Penambahan telah disimpan.');
+        }else{
+            $responses = array('message' => 'Terjadi kesalaahan. Penambahan gagal disimpan.');
+        }
+        return response()->json($responses);
+    }
+
+    public function detailApmProvinsi($id)
+    {
+        $header = '<div class="block-header">';
+        $header .= '<h2 style="display: inline;">Organisasi</h2>';
+        $header .= '</div>';
+
+        $apmprovinsi = ApmProvinsi::apmprovinsiById($id)->get();
+
+        return view('backend.laporan.apmprovinsi.detail')
+            ->with('header', $header)
+            ->with('apmprovinsi', $apmprovinsi);
+    }
+
+    public function export($type){
+        $year = ApmProvinsi::year()->get();
+        $categorie = ApmProvinsi::Name()->get();
+
+        $a=0;
+        $b=0;
+        $datas = array();
+        foreach ($categorie as $categories){
+            foreach ($year as $years){
+                $query = DB::table('apmprovinsi');
+                $query = $query->select(DB::raw("apmprovinsiname, SUM(apmprovinsibanten) as apmprovinsibanten, SUM(apmprovinsiindonesia) as apmprovinsiindonesia, EXTRACT(YEAR FROM apmprovinsitgl) as tahun"));
+                $query = $query->whereBetween('apmprovinsitgl', array($years->tahun.'-01-01', $years->tahun.'-12-31'));
+                $query = $query->where('apmprovinsiname', $categories->apmprovinsiname);
+                $query = $query->groupBy(array('apmprovinsiname', 'tahun'));
+                $haragaberlaku = $query->get();
+
+                $datas[$a]['category'] = $categories->apmprovinsiname;
+
+                if(!$haragaberlaku->isEmpty()){
+                    foreach ($haragaberlaku as $harga){
+                        $datas[$a][$years->tahun.'banten'] = $harga->apmprovinsibanten;
+                        $datas[$a][$years->tahun.'indonesia'] = $harga->apmprovinsiindonesia;
+                    }
+                }else{
+                    $datas[$a][$years->tahun.'banten'] = '-';
+                    $datas[$a][$years->tahun.'indonesia'] = '-';
+                }
+                $b++;
+            }
+            $a++;
+        }
+        return Excel::create('Angka Partisipasi Murni (APM) Provinsi Banten', function($excel) use ($datas) {
+            $excel->sheet('mySheet', function($sheet) use ($datas)
+            {
+                $sheet->setMergeColumn(array(
+                    'columns' => array('A'),
+                    'rows' => array(
+                        array(1,2)
+                    )
+                ));
+
+                $year = ApmProvinsi::year()->get();
+
+                $row1 = array();
+                $row1[0] = "Kategori";
+                $ass = 1;
+                foreach ($year as $value){
+                    $row1[$ass] = $value->tahun;
+                    $row1[$ass+1] = "";
+                    $ass = $ass + 2;
+                }
+
+                $row2 = array();
+                $row2[0] = "";
+                $all = 1;
+                foreach ($year as $value){
+                    $row2[$all] = "Banten";
+                    $row2[$all+1] = "Indonesia";
+                    $all = $all + 2;
+                }
+
+                $sheet->row(1, $row1);
+                $sheet->row(2, $row2);
+                $sheet->fromArray($datas, null, 'A3', false, false);
+            });
+        })->download($type);
+    }
+
+    public function getColumns()
+    {
+        $data1 = array(
+            array(
+                'label' => 'Kategori',
+                'field' => 'category',
+                'numeric' => false,
+                'html' => false,
+                'rowspan' => '2',
+                'colspan' => '0',
+            ),
+        );
+
+
+        $year = ApmProvinsi::year()->orderBy('tahun','ASC')->get();
+        $data2 = array();
+        $data3 = array();
+        $i=0;
+        foreach($year as $y){
+            $data2[$i]['label'] = $y->tahun;
+            $data2[$i]['rowspan'] = '0';
+            $data2[$i]['colspan'] = '2';
+            $i++;
+        }
+        $year2 = ApmProvinsi::year()->orderBy('tahun','ASC')->get();
+        $j=0;
+        $k=0;
+        foreach($year as $y){
+            foreach($year2 as $yr){
+                if($j %2 == 0){
+                    $data3[$j]['label'] = 'Banten';
+                    $data3[$j]['field'] = $y->tahun.'banten';
+                }else{
+                    $data3[$j]['label'] = 'Indonesia';
+                    $data3[$j]['field'] = $y->tahun.'indonesia';
+                }
+                $data3[$j]['numeric'] = true;
+                $data3[$j]['html'] = false;
+                $j++;
+            }
+            $k++;
+        }
+        return response()->json(['data1' => $data1, 'data2' => $data2, 'data3' => array_unique($data3, SORT_REGULAR)]);
+    }
+}
